@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">萤截</string>
+    <string name="input_hint">粘贴抖音/快手/B站视频链接或分享口令…</string>
+    <string name="btn_extract">提取</string>
+    <string name="mode_video">🎬 视频</string>
+    <string name="mode_audio">🎵 音频</string>
+    <string name="mode_text">📝 文案</string>
+    <string name="status_idle">粘贴链接，选择提取类型，点击提取</string>
+    <string name="btn_history">历史记录</string>
+    <string name="btn_clear">清空</string>
+    <string name="btn_copy">复制</string>
+    <string name="btn_save_txt">保存为 TXT</string>
+    <string name="btn_open">打开</string>
+</resources>

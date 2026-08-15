@@ -1,0 +1,19 @@
+# Gradle 构建产物
+.gradle/
+.kotlin/
+build/
+app/build/
+
+# 本地 SDK 路径
+local.properties
+
+# 备份文件
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+*.iml
