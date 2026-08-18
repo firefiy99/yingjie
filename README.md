@@ -30,6 +30,11 @@
 
 ## 更新日志
 
+### v1.8.3
+- 修复偶发性「提取失败：AttributeError: module 'extractor' has no attribute 'extract_ison'」
+- 根因：Chaquopy AssetFinder 缓存旧版 Python 模块不随 APK 升级刷新
+- 方案：App 启动时按 versionCode 自动清除旧缓存，强制从 APK 重新解压最新模块
+
 ### v1.8.2
 - 免责声明改为强制滑到底部才能「同意」；新增「拒绝」按钮，点击直接退出
 
