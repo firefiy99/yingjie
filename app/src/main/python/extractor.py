@@ -12,8 +12,19 @@ import sys
 
 # 防止运行时生成 .pyc 缓存导致更新 APK 后仍加载旧代码
 sys.dont_write_bytecode = True
+import io
+sys.pycache_prefix = None
 
 import yt_dlp
+
+
+def _diag(tag: str = "") -> str:
+    """诊断：返回当前模块的加载路径和方法清单，方便定位运行时加载异常。"""
+    import os
+    m = sys.modules.get(__name__)
+    funcs = sorted(n for n in dir(m) if not n.startswith("_")) if m else []
+    f = getattr(m, "__file__", "?")
+    return "[%s] file=%s funcs=%s" % (tag, f, ",".join(funcs))
 
 
 def _link_from_text(text: str) -> str:
@@ -25,7 +36,8 @@ def _link_from_text(text: str) -> str:
 
 
 def test() -> str:
-    return yt_dlp.version.__version__
+    funcs = sorted(n for n in dir(sys.modules[__name__]) if not n.startswith("_"))
+    return "yt-dlp %s | %s" % (yt_dlp.version.__version__, ",".join(funcs))
 
 
 def _friendly(e: Exception) -> str:

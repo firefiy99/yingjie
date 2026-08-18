@@ -11,10 +11,11 @@ class YingJieApp : PyApplication() {
         // APK 内 asset 时间戳固定（1981-01-01），pm install -r 升级后 AssetFinder
         // 不会检测到 APK 变化，仍加载旧缓存中的 extractor 模块，偶发报
         // "AttributeError: module 'extractor' has no attribute 'extract_json'"。
-        // 这里在 Python 初始化之前，按 versionCode 变化清除旧缓存，强制从 APK 重新解压。
+        // 这里在 Python 初始化之前，按 lastUpdateTime 变化清除旧缓存，强制从 APK 重新解压。
+        // 用 lastUpdateTime 而不是 versionCode：同版本重装（APK 内容可能不同）也会触发重建。
         try {
             val cur = try {
-                packageManager.getPackageInfo(packageName, 0).versionCode.toString()
+                packageManager.getPackageInfo(packageName, 0).lastUpdateTime.toString()
             } catch (_: Exception) {
                 ""
             }

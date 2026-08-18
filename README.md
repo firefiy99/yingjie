@@ -30,6 +30,21 @@
 
 ## 更新日志
 
+### v1.8.7
+- 修复「提取一次后切换模式就失败（AttributeError: ... has no attribute 'download_json'）」
+- 根因：Chaquopy getModule() 每次调用都会重新 import 模块，第二次调用时拿到不完整的模块对象
+- 方案：Extractor.kt 缓存 PyObject 模块引用，整个 App 生命周期只 import 一次，后续所有调用复用同一对象
+
+### v1.8.6
+- YingJieApp 缓存检测改用 lastUpdateTime：同版本重装（APK 内容不同）也会自动重建 AssetFinder 缓存
+- extractor.py 增加运行时诊断（_diag / 状态栏显示模块方法清单）
+- 提取失败时输出模块加载状态日志（YingJieExtractor）
+
+### v1.8.5
+- 彻底修复提取失败：删除被打包进 APK 的 `extractor.py.bak` 备份文件
+- 根因：Chaquopy 会把 Python 目录内所有 .py（含 .bak）当模块源，`.bak` 与 `extractor.py` 同名冲突，运行时偶发加载旧版模块 → `AttributeError: ... has no attribute 'download_json'`
+- 状态栏现在会显示实际加载的模块方法清单（便于诊断）
+
 ### v1.8.3
 - 修复偶发性「提取失败：AttributeError: module 'extractor' has no attribute 'extract_ison'」
 - 根因：Chaquopy AssetFinder 缓存旧版 Python 模块不随 APK 升级刷新
