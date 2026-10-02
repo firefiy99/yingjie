@@ -30,6 +30,11 @@
 
 ## 更新日志
 
+### v1.8.8
+- 修复抖音提取报错「Fresh cookies (not necessarily logged in) are needed」
+- 根因：Cookie 只追加到 HTTP 请求头，未导入 yt-dlp 的 cookie jar；抖音新版反爬要求请求必须带 `s_v_web_id` 等浏览器 cookie，而 yt-dlp 的 Douyin 提取器从 jar 读取判断
+- 方案：`_apply_cookie` 现在会把 Cookie 字符串写成 Netscape cookies.txt 并通过 `cookiefile` 参数导入 yt-dlp cookie jar（优先写入应用 cacheDir），同时保留请求头方式
+
 ### v1.8.7
 - 修复「提取一次后切换模式就失败（AttributeError: ... has no attribute 'download_json'）」
 - 根因：Chaquopy getModule() 每次调用都会重新 import 模块，第二次调用时拿到不完整的模块对象

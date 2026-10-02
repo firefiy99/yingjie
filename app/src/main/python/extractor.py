@@ -59,12 +59,76 @@ def _friendly(e: Exception) -> str:
     return msg[:200]
 
 
-def _apply_cookie(opts: dict, cookie) -> None:
-    """仅追加 Cookie 请求头，不覆盖 yt-dlp 默认的 UA/Referer（避免触发平台风控）。"""
-    if cookie:
-        headers = dict(opts.get("http_headers") or {})
-        headers["Cookie"] = cookie
-        opts["http_headers"] = headers
+def _cookie_host(url: str) -> str:
+    """根据链接判断 cookie 所属域名（抖音\/快手）。"""
+    u = (url or "").lower()
+    if "kuaishou" in u:
+        return "www.kuaishou.com"
+    return "www.douyin.com"
+
+
+def _cookie_tmp_dir() -> str:
+    """返回可写临时目录：优先用 app 的 cacheDir（Android 上 /tmp 可能不存在）。"""
+    try:
+        from com.chaquo.python import Python
+        ctx = Python.getApplicationContext()
+        d = str(ctx.getCacheDir().getAbsolutePath())
+        if d:
+            return d
+    except Exception:
+        pass
+    import tempfile
+    return tempfile.gettempdir()
+
+
+def _apply_cookie(opts: dict, cookie, host: str = "www.douyin.com") -> None:
+    """把 Cookie 导入 yt-dlp。
+
+    两个动作：
+    1. 把 cookie 字符串写成 Netscape cookies.txt，通过 cookiefile 参数导入
+       yt-dlp 的 cookie jar（抖音提取器用 _get_cookies() 检查 s_v_web_id，
+       只塞 http_headers 不会进 jar，会导致 "Fresh cookies are needed"）；
+    2. 同时追加 Cookie 请求头，保持与旧版一致的服务器端行为。
+
+    cookies.txt 放在系统临时目录，可被多次调用覆盖复用。
+    """
+    if not cookie:
+        return
+    # 1. 写 cookies.txt 并导入 cookie jar
+    try:
+        import http.cookiejar
+
+        jar_path = os.path.join(_cookie_tmp_dir(), "yingjie_cookies_%s.txt" % host.strip(".").replace(".", "_"))
+        jar = http.cookiejar.MozillaCookieJar(jar_path)
+        # 同一域名下的多个 cookie 可能重复出现，先按 name 去重（保留最后一个值）
+        pairs = {}
+        for part in cookie.split(";"):
+            part = part.strip()
+            if "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            pairs[k.strip()] = v.strip()
+        for name, value in pairs.items():
+            if not name or not value:
+                continue
+            c = http.cookiejar.Cookie(
+                version=0, name=name, value=value,
+                port=None, port_specified=False,
+                domain=host, domain_specified=True, domain_initial_dot=host.startswith("."),
+                path="/", path_specified=True,
+                secure=False, expires=None, discard=True,
+                comment=None, comment_url=None, rest={}, rfc2109=False,
+            )
+            jar.set_cookie(c)
+        jar.save(ignore_discard=True, ignore_expires=True)
+        opts["cookiefile"] = jar_path
+    except Exception:
+        # 写文件失败时退回到请求头方式，不阻断提取
+        pass
+    # 2. 请求头也带上（部分平台按 header 校验）
+    headers = dict(opts.get("http_headers") or {})
+    headers["Cookie"] = cookie
+    opts["http_headers"] = headers
 
 
 def _make_progress_hook(progress_callback):
@@ -92,7 +156,7 @@ def _download_one(url: str, out_dir: str, fmt: str, cookie, progress_callback):
         "retries": 3,
         "socket_timeout": 30,
     }
-    _apply_cookie(ydl_opts, cookie)
+    _apply_cookie(ydl_opts, cookie, _cookie_host(url))
     if progress_callback is not None:
         ydl_opts["progress_hooks"] = [_make_progress_hook(progress_callback)]
 
@@ -133,7 +197,7 @@ def extract_json(url_or_text: str, cookie=None) -> str:
         "skip_download": True,
         "noplaylist": True,
     }
-    _apply_cookie(opts, cookie)
+    _apply_cookie(opts, cookie, _cookie_host(url))
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -166,7 +230,7 @@ def download_json(url_or_text: str, mode: str, out_dir: str, cookie=None, ffmpeg
         # 探测格式：是否 DASH 音视频分离
         try:
             probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True}
-            _apply_cookie(probe_opts, cookie)
+            _apply_cookie(probe_opts, cookie, _cookie_host(url))
             with yt_dlp.YoutubeDL(probe_opts) as ydl:
                 pinfo = ydl.extract_info(url, download=False)
         except Exception as e:

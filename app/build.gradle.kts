@@ -13,8 +13,8 @@ android {
         applicationId = "com.yingjie.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.8.7"
+        versionCode = 24
+        versionName = "1.8.8"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -36,6 +36,8 @@ chaquopy {
         version = "3.12"
         pip {
             install("yt-dlp")
+            // 国内网络访问 PyPI 不稳定，固定用清华镜像
+            options("--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple")
         }
     }
 }
