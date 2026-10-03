@@ -15,7 +15,8 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 
-/** 内置 WebView 登录页：打开抖音网页，自动抓取浏览器 Cookie 保存，免去电脑 F12 复制 */
+/** 内置 WebView 登录页：打开平台网页，自动抓取浏览器 Cookie 保存，免去电脑 F12 复制。
+ *  抖音/快手/视频号（元宝）通用。 */
 class LoginActivity : Activity() {
 
     private lateinit var webView: WebView
@@ -27,8 +28,16 @@ class LoginActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         platform = intent.getStringExtra("platform") ?: "douyin"
-        loginUrl = if (platform == "kuaishou") "https://www.kuaishou.com/" else "https://www.douyin.com/"
-        val label = if (platform == "kuaishou") "快手" else "抖音"
+        loginUrl = when (platform) {
+            "kuaishou" -> "https://www.kuaishou.com/"
+            "sph" -> "https://yuanbao.tencent.com/"
+            else -> "https://www.douyin.com/"
+        }
+        val label = when (platform) {
+            "kuaishou" -> "快手"
+            "sph" -> "视频号（元宝）"
+            else -> "抖音"
+        }
         title = "登录$label 抓取 Cookie"
 
         val root = LinearLayout(this).apply {
@@ -125,11 +134,30 @@ class LoginActivity : Activity() {
             Toast.makeText(this, "还没拿到 Cookie，请等页面加载完（或先登录）再点", Toast.LENGTH_LONG).show()
             return
         }
-        val key = if (platform == "kuaishou") "cookie_kuaishou" else "cookie_douyin"
+        val key = when (platform) {
+            "kuaishou" -> "cookie_kuaishou"
+            "sph" -> "cookie_sph"
+            else -> "cookie_douyin"
+        }
         getSharedPreferences("yingjie", Context.MODE_PRIVATE)
             .edit().putString(key, cookie).apply()
         status.text = "✅ 已抓取并保存 Cookie（长度 ${cookie.length}）"
-        Toast.makeText(this, "Cookie 已保存，返回即可提取抖音", Toast.LENGTH_LONG).show()
+        val tip = when (platform) {
+            "kuaishou" -> "快手"
+            "sph" -> "视频号（元宝）"
+            else -> "抖音"
+        }
+        // 视频号：抓到的 Cookie 必须含登录凭证，否则元宝接口 401
+        if (platform == "sph") {
+            val markers = listOf("hy_user=", "hy_token=", "uin=", "skey=", "p_skey=", "pt_key=", "sessionid", "access_token", "auth_token")
+            if (!markers.any { cookie.contains(it, ignoreCase = true) }) {
+                status.text = "⚠️ Cookie 里没有登录凭证（只有设备指纹）\n请先用微信扫码登录元宝，登录成功后再点「抓取Cookie」"
+                Toast.makeText(this, "未检测到登录凭证：请先扫码登录元宝网页版，再重新抓取", Toast.LENGTH_LONG).show()
+                webView.postDelayed({ finish() }, 1200)
+                return
+            }
+        }
+        Toast.makeText(this, "$tip Cookie 已保存，返回即可提取", Toast.LENGTH_LONG).show()
         // 延迟返回，让用户看到提示
         webView.postDelayed({ finish() }, 800)
     }

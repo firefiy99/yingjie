@@ -102,7 +102,11 @@ class MainActivity : Activity() {
     }
 
     private fun cookie(platform: String): String? {
-        val key = if (platform == "kuaishou") "cookie_kuaishou" else "cookie_douyin"
+        val key = when (platform) {
+            "kuaishou" -> "cookie_kuaishou"
+            "sph" -> "cookie_sph"
+            else -> "cookie_douyin"
+        }
         val c = getSharedPreferences("yingjie", Context.MODE_PRIVATE).getString(key, "")
         return c?.takeIf { it.isNotBlank() }
     }
@@ -111,6 +115,7 @@ class MainActivity : Activity() {
         val t = text.lowercase()
         return when {
             t.contains("kuaishou") -> "kuaishou"
+            t.contains("weixin.qq.com/sph") || t.contains("channels.weixin.qq.com") || t.contains("finder.video.qq.com") -> "sph"
             t.contains("douyin") || t.contains("iesdouyin") -> "douyin"
             else -> null
         }
@@ -273,6 +278,12 @@ class MainActivity : Activity() {
 
     private fun db() = HistoryDb(this)
 
+    /** 判断是否为登录后的元宝 Cookie（hy_user/hy_token 或 uin/skey 等登录凭证，而不是只有设备指纹） */
+    private fun hasSphLoginMarker(cookie: String): Boolean {
+        val markers = arrayOf("hy_user=", "hy_token=", "uin=", "skey=", "p_skey=", "pt_key=", "sessionid", "session_id", "access_token", "auth_token", "refresh_token")
+        return markers.any { cookie.contains(it, ignoreCase = true) }
+    }
+
     private fun copyCaption() {
         if (caption.text.isBlank()) return
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -295,19 +306,38 @@ class MainActivity : Activity() {
     }
 
     private fun showCookieDialog() {
+        val options = arrayOf("抖音 Cookie", "快手 Cookie", "视频号 Cookie（元宝）")
         AlertDialog.Builder(this)
             .setTitle("设置 Cookie")
-            .setMessage("抖音和快手需分别设置 Cookie，请选择平台")
-            .setPositiveButton("抖音 Cookie") { _, _ -> showCookieInput("douyin") }
-            .setNeutralButton("快手 Cookie") { _, _ -> showCookieInput("kuaishou") }
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showCookieInput("douyin")
+                    1 -> showCookieInput("kuaishou")
+                    2 -> showCookieInput("sph")
+                }
+            }
             .setNegativeButton("取消", null)
             .show()
     }
 
     private fun showCookieInput(platform: String) {
-        val label = if (platform == "kuaishou") "快手" else "抖音"
+        val label = when (platform) {
+            "kuaishou" -> "快手"
+            "sph" -> "视频号"
+            else -> "抖音"
+        }
+        val hintText = when (platform) {
+            "sph" -> "粘贴元宝网页版 Cookie（在电脑浏览器登录 yuanbao.tencent.com 后复制，形如 uin=...; qqmusic_uin=...; ...）"
+            "kuaishou" -> "粘贴快手网页版的 Cookie（kuaishou.server.web_st=...; ...）"
+            else -> "粘贴抖音网页版的 Cookie（ttwid=...; ...）"
+        }
+        val message = when (platform) {
+            "sph" -> "视频号解析需要「元宝」（yuanbao.tencent.com）网页版登录 Cookie：\n\n1. 在电脑浏览器打开 yuanbao.tencent.com 并登录\n2. 按 F12 → Network → 刷新页面 → 复制任意请求的 Cookie 请求头\n3. 粘贴到下面保存即可（元宝 Cookie 失效后重新抓一次）\n\n也可以点「一键登录抓取」在 App 内打开元宝网页，登录后自动抓取。"
+            "kuaishou" -> "可以点「一键登录抓取」在 App 内打开快手网页自动获取，也可以手动粘贴 Cookie。"
+            else -> "可以点「一键登录抓取」在 App 内打开抖音网页自动获取，也可以手动粘贴 Cookie。"
+        }
         val edit = EditText(this).apply {
-            hint = "粘贴${label}网页版的 Cookie（ttwid=...; ...）"
+            hint = hintText
             setText(cookie(platform) ?: "")
             minLines = 3
             maxLines = 8
@@ -315,14 +345,26 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle("设置 $label Cookie")
-            .setMessage("可以点「一键登录抓取」在 App 内打开${label}网页自动获取，也可以手动粘贴 Cookie。")
+            .setMessage(message)
             .setView(edit)
             .setPositiveButton("保存") { _, _ ->
                 val c = edit.text.toString().trim()
-                val key = if (platform == "kuaishou") "cookie_kuaishou" else "cookie_douyin"
+                val key = when (platform) {
+                    "kuaishou" -> "cookie_kuaishou"
+                    "sph" -> "cookie_sph"
+                    else -> "cookie_douyin"
+                }
                 getSharedPreferences("yingjie", Context.MODE_PRIVATE)
                     .edit().putString(key, c).apply()
                 Toast.makeText(this, if (c.isBlank()) "已清空 Cookie" else "$label Cookie 已保存", Toast.LENGTH_SHORT).show()
+                // 视频号：检查是否为登录后的元宝 Cookie（防 401 踩坑）
+                if (platform == "sph" && c.isNotBlank() && !hasSphLoginMarker(c)) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Cookie 可能未登录")
+                        .setMessage("这个 Cookie 里没有登录凭证（只有设备指纹），元宝接口会返回 401 提取失败。\n\n请在电脑浏览器打开 yuanbao.tencent.com，用微信扫码登录成功后，再重新复制整段 Cookie 粘贴保存。")
+                        .setPositiveButton("知道了", null)
+                        .show()
+                }
             }
             .setNeutralButton("一键登录抓取") { _, _ ->
                 startActivity(Intent(this, LoginActivity::class.java).putExtra("platform", platform))

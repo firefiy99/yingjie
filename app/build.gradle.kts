@@ -13,8 +13,8 @@ android {
         applicationId = "com.yingjie.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.8.8"
+        versionCode = 25
+        versionName = "1.9.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

@@ -1,6 +1,6 @@
 # 萤截 (YingJie)
 
-安卓视频提取工具：粘贴抖音/快手/B站等平台的视频链接或分享口令，一键提取**无水印视频**、**音频**或**文案**。
+安卓视频提取工具：粘贴抖音/快手/视频号/B站等平台的视频链接或分享口令，一键提取**无水印视频**、**音频**或**文案**。
 
 > 创作者：小星萤
 
@@ -8,14 +8,14 @@
 
 | 模式 | 产出 | 说明 |
 |---|---|---|
-| 🎬 视频 | 无水印 MP4 | 抖音/快手取无水印单文件源流；B站自动合并音视频 |
-| 🎵 音频 | 音频文件 (m4a) | 从原视频直接抽音轨，不转码、音质无损 |
+| 🎬 视频 | 无水印 MP4 | 抖音/快手/视频号取无水印单文件源流；B站自动合并音视频 |
+| 🎵 音频 | 音频文件 (m4a) | 从原视频直接抽音轨，不转码、音质无损（视频号暂不支持） |
 | 📝 文案 | 文字 | 作品描述/简介，支持一键复制 + 保存为 TXT |
 
 - 支持从其他 App「分享」链接直接填入
 - 文件自动保存到系统 `下载/萤截/` 目录（Android 10+ 无需存储权限）
 - 内置下载历史记录（可清空）
-- 抖音/快手 Cookie 管理（App 内一键登录抓取，无需电脑）
+- 抖音/快手 Cookie 管理 + **视频号（元宝）Cookie 管理**（App 内一键登录抓取，无需电脑）
 - iOS 风格毛玻璃界面（Android 12+ 真模糊）
 - 首次启动免责声明（强制滑到底部确认）
 - 关于页（创作者标识、版本号、联系方式）
@@ -23,12 +23,21 @@
 ## 技术方案
 
 - **解析内核**：内嵌 [yt-dlp](https://github.com/yt-dlp/yt-dlp)（纯 Python，持续更新）
+- **视频号解析**：微信视频号不公开直链，借助腾讯「元宝」网页版解析接口（需元宝登录 Cookie）换取 exportId + generalToken，再调视频号 finder-preview 接口获取直链（`stodownload?encfilekey=...`），直链直接下载无水印 MP4
 - **Python 运行时**：[Chaquopy](https://chaquo.com/chaquopy/) 16.1.0 + Python 3.12
 - **B站音视频合并**：MediaMuxer（系统原生，无需 ffmpeg）
 - **App 本体**：Kotlin + 原生 View（零 androidx 依赖）
 - **构建**：AGP 8.13 + Gradle 8.14.2，minSdk 26 / targetSdk 35，arm64-v8a
 
 ## 更新日志
+
+### v1.9.0
+- **新增微信视频号支持**：粘贴 `weixin.qq.com/sph/...` 分享链接可提取无水印视频与文案
+- 技术方案：借助腾讯「元宝」（yuanbao.tencent.com）网页版解析接口（需登录 Cookie）换取 exportId + generalToken，再调视频号 finder-preview 接口获取视频直链（`stodownload?encfilekey=...`），直链直接下载
+- 设置 Cookie 新增「视频号 Cookie（元宝）」入口：可一键登录抓取（App 内打开元宝网页），或手动粘贴电脑浏览器 F12 复制的 Cookie
+- **修复 401 踩坑**：保存/抓取视频号 Cookie 时自动检测登录凭证（`uin`/`skey` 等）；若只有设备指纹（qimei/TDID）会提示「Cookie 可能未登录」——元宝接口对未登录访客一律返回 401，必须先用微信扫码登录 yuanbao.tencent.com 再复制 Cookie
+- 视频号音频模式暂不支持（接口只提供含音视频的单个 MP4 直链），已给出友好提示
+- 注意：元宝 Cookie 有有效期，失效后重新抓取即可
 
 ### v1.8.8
 - 修复抖音提取报错「Fresh cookies (not necessarily logged in) are needed」
