@@ -31,6 +31,14 @@
 
 ## 更新日志
 
+### v1.9.1
+- **新增抖音图文（笔记）背景音乐提取**：粘贴抖音图文作品的分享口令（`v.douyin.com` 短链），用「音频」模式可直接提取它的背景音乐\/原声（mp3）
+- 背景：yt-dlp 的抖音解析器只匹配 `/video/<纯数字>`，图文（`/note/`）链接会被判为「不支持的链接或平台」
+- 方案：短链带移动端 UA 跟随跳转后，分享 URL 自带 `mid=<音乐ID>`，再调抖音 `aweme/v1/web/music/detail` 接口获取 `music_info.play_url.url_list` 直链（mp3），直接下载无水印原声
+- 修复：补齐 `_dy_resolve_short`（短链跳转解析）函数定义（重构时误删导致图文识别不到，仍报「不支持的链接或平台」）
+- 图文「视频」模式会友好提示改用音频模式
+- 帮助页补充抖音图文说明
+
 ### v1.9.0
 - **新增微信视频号支持**：粘贴 `weixin.qq.com/sph/...` 分享链接可提取无水印视频与文案
 - 技术方案：借助腾讯「元宝」（yuanbao.tencent.com）网页版解析接口（需登录 Cookie）换取 exportId + generalToken，再调视频号 finder-preview 接口获取视频直链（`stodownload?encfilekey=...`），直链直接下载

@@ -354,6 +354,157 @@ def _sph_download(url: str, cookie, out_dir: str, progress_callback=None):
     return path, info
 
 
+# ================= 抖音图文（note）背景音乐提取 =================
+# 抖音图文作品没有视频流，只有图片 + 背景音乐（原声）。yt-dlp 的 DouyinIE
+# 只匹配 /video/<纯数字>，对 /note/ 图文直接报 Unsupported URL。
+# 可行方案：分享短链 v.douyin.com/xxx 带移动端 UA 跟随跳转后，分享 URL 里带
+# mid=<音乐ID>，再调抖音 music/detail 接口拿 music_info.play_url.url_list 直链（mp3）。
+# 实测链路（2026-10）：短链跳转 → mid=7577766520676535078 → music/detail → mp3 直链可下载。
+
+_DY_MUSIC_URL = "https://www.douyin.com/aweme/v1/web/music/detail/"
+
+_DY_MOBILE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                 "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+
+def _dy_resolve_short(url: str) -> str:
+    """解析 v.douyin.com 短链：带移动端 UA 跟随跳转，返回最终分享 URL（含 mid 参数）。"""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": _DY_MOBILE_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.geturl()
+    except urllib.error.HTTPError as e:
+        if e.geturl():
+            return e.geturl()
+        raise RuntimeError("抖音短链解析失败：HTTP %s" % e.code)
+    except Exception as e:
+        raise RuntimeError("抖音短链解析失败：%s" % e)
+
+
+def _dy_classify(url: str):
+    """判断抖音链接类型：'note'（图文）/'video'（视频）/None（非抖音）。
+
+    完整链接直接看路径；v.douyin.com 短链需跳转解析后再判断
+    （短链既可能是视频也可能是图文，不能一概而论）。
+    """
+    u = (url or "").lower()
+    if "douyin.com" not in u and "iesdouyin.com" not in u:
+        return None
+    if "v.douyin.com/" in u:
+        try:
+            final_url = _dy_resolve_short(url)
+        except Exception:
+            return "video"  # 跳转失败时交给 yt-dlp 走通用流程报错
+        f = final_url.lower()
+        if "/note/" in f or "share/note/" in f:
+            return "note"
+        return "video"
+    if "/note/" in u or "share/note/" in u:
+        return "note"
+    return "video"
+
+
+def _dy_music_id(url: str) -> str:
+    """从图文链接中解析出音乐 ID（mid）。短链需先跳转，分享 URL 里带 mid 参数。"""
+    u = (url or "").lower()
+    final_url = url
+    if "v.douyin.com/" in u:
+        final_url = _dy_resolve_short(url)
+    q = parse_qs(urlparse(final_url).query)
+    mid = (q.get("mid") or [""])[0]
+    if not mid:
+        raise RuntimeError("该抖音图文没有可提取的背景音乐（分享链接未带音乐ID）")
+    return mid
+
+
+def _dy_music_info(mid: str, cookie) -> dict:
+    """调 music/detail 接口，返回 {title, author, duration, url_list}。"""
+    headers = {
+        "User-Agent": _DY_MOBILE_UA,
+        "Referer": "https://www.iesdouyin.com/",
+        "Accept": "application/json, text/plain, */*",
+    }
+    if cookie:
+        headers["Cookie"] = cookie
+    api = "%s?music_id=%s&aid=1128&channel=channel_pc_web&device_platform=web&os=0&app_name=aweme" % (_DY_MUSIC_URL, mid)
+    req = urllib.request.Request(api, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("抖音音乐接口返回 %s，请稍后重试" % e.code)
+    except Exception as e:
+        raise RuntimeError("网络连接失败：%s" % e)
+    try:
+        data = json.loads(body)
+    except Exception:
+        raise RuntimeError("抖音音乐解析失败：接口返回异常")
+    mi = data.get("music_info") or {}
+    if not mi:
+        raise RuntimeError("未找到该图文的背景音乐（可能已下架或为私密内容）")
+    urls = ((mi.get("play_url") or {}).get("url_list") or [])
+    urls = [u for u in urls if u and u.startswith("http")]
+    if not urls:
+        raise RuntimeError("该背景音乐没有可下载的音频（可能受版权保护）")
+    return {
+        "title": (mi.get("title") or "抖音图文原声").strip(),
+        "author": (mi.get("author") or "").strip(),
+        "duration": mi.get("duration") or 0,
+        "url_list": urls,
+    }
+
+
+def _dy_note_info(url: str, cookie) -> dict:
+    mid = _dy_music_id(url)
+    mi = _dy_music_info(mid, cookie)
+    return {
+        "title": mi["title"],
+        "description": mi["title"],
+        "duration": mi["duration"],
+        "uploader": mi["author"],
+        "platform": "douyin_note",
+        "webpage_url": url,
+        "music_url": mi["url_list"][0],
+    }
+
+
+def _dy_note_download(url: str, cookie, out_dir: str, progress_callback=None):
+    """下载抖音图文背景音乐（mp3），返回 (文件路径, info dict)。"""
+    info = _dy_note_info(url, cookie)
+    safe = re.sub(r'[\\/:*?"<>|]', "_", info["title"])[:80] or "抖音图文原声"
+    path = os.path.join(out_dir, "%s.mp3" % safe)
+    req = urllib.request.Request(info["music_url"], headers={"User-Agent": _DY_MOBILE_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp, open(path, "wb") as f:
+            total = 0
+            try:
+                total = int(resp.headers.get("Content-Length") or 0)
+            except Exception:
+                total = 0
+            done = 0
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                done += len(chunk)
+                if progress_callback is not None:
+                    try:
+                        progress_callback.onProgress(done, total, "")
+                    except Exception:
+                        pass
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("音频下载失败：HTTP %s" % e.code)
+    except Exception as e:
+        raise RuntimeError("音频下载失败：%s" % e)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        raise RuntimeError("音频下载失败：文件为空")
+    return path, info
+
+
 def _make_progress_hook(progress_callback):
     def hook(d):
         try:
@@ -428,6 +579,20 @@ def extract_json(url_or_text: str, cookie=None) -> str:
             "platform": "weixin_channels",
             "webpage_url": url,
         }, ensure_ascii=False)
+    # 抖音图文：提取背景音乐信息（不走 yt-dlp）
+    if _dy_classify(url) == "note":
+        try:
+            info = _dy_note_info(url, cookie)
+        except Exception as e:
+            return json.dumps({"error": _friendly(e)}, ensure_ascii=False)
+        return json.dumps({
+            "title": info["title"],
+            "description": info["description"],
+            "duration": info["duration"],
+            "uploader": info["uploader"],
+            "platform": "douyin_note",
+            "webpage_url": url,
+        }, ensure_ascii=False)
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -477,6 +642,23 @@ def download_json(url_or_text: str, mode: str, out_dir: str, cookie=None, ffmpeg
             }, ensure_ascii=False)
         elif mode == "audio":
             return json.dumps({"error": "视频号暂不支持直接提取音频，请用「视频」模式下载后再用其他工具转音频"}, ensure_ascii=False)
+        else:
+            return json.dumps({"error": "未知提取模式"}, ensure_ascii=False)
+
+    # 抖音图文：提取背景音乐（mp3），仅音频模式支持
+    if _dy_classify(url) == "note":
+        if mode == "audio":
+            try:
+                path, info = _dy_note_download(url, cookie, out_dir, progress_callback)
+            except Exception as e:
+                return json.dumps({"error": _friendly(e)}, ensure_ascii=False)
+            return json.dumps({
+                "path": path,
+                "title": info["title"],
+                "ext": "mp3",
+            }, ensure_ascii=False)
+        elif mode == "video":
+            return json.dumps({"error": "抖音图文没有视频画面，请用「音频」模式提取背景音乐"}, ensure_ascii=False)
         else:
             return json.dumps({"error": "未知提取模式"}, ensure_ascii=False)
 
